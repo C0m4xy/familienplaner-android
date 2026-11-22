@@ -1,3 +1,5 @@
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.Properties
 
 plugins {
@@ -20,8 +22,11 @@ android {
         applicationId = "de.comaxy.familienplaner"
         minSdk = 34          // Android 14
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.5"
+        versionCode = 7
+        versionName = "1.6"
+        // Datum des Builds (wird auf der Startseite angezeigt)
+        buildConfigField("String", "BUILD_DATE",
+            "\"" + LocalDate.now().format(DateTimeFormatter.ofPattern("dd.MM.yyyy")) + "\"")
     }
 
     signingConfigs {
@@ -44,6 +49,8 @@ android {
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
+
+    buildFeatures { buildConfig = true }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

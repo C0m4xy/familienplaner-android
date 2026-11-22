@@ -70,6 +70,7 @@ class MainActivity : Activity() {
     private lateinit var primaryLabel: TextView
     private lateinit var primaryProgress: ProgressBar
     private lateinit var codeLinks: View
+    private lateinit var versionLabel: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -367,6 +368,8 @@ class MainActivity : Activity() {
         primaryLabel = findViewById(R.id.primaryLabel)
         primaryProgress = findViewById(R.id.primaryProgress)
         codeLinks = findViewById(R.id.codeLinks)
+        versionLabel = findViewById(R.id.versionLabel)
+        versionLabel.text = "Version ${Updater.currentName(this)} · Build ${BuildConfig.BUILD_DATE}"
 
         modeGroup.check(if (config.mode == ServerConfig.Mode.CLOUD) R.id.modeCloud else R.id.modeOwn)
         ownType.check(if (config.mode == ServerConfig.Mode.LOCAL) R.id.typeLocal else R.id.typeAccess)
@@ -507,6 +510,7 @@ class MainActivity : Activity() {
         loginScreen.visibility =
             if (screen == Screen.READY || screen == Screen.CHECKING || showingLoginPage) View.GONE else View.VISIBLE
         loginPageBar.visibility = if (showingLoginPage) View.VISIBLE else View.GONE
+        versionLabel.visibility = loginScreen.visibility
 
         title.setText(if (codeStep) R.string.code_title else R.string.app_name)
         subtitle.text = if (codeStep) getString(R.string.code_subtitle, config.email) else getString(R.string.setup_subtitle)
