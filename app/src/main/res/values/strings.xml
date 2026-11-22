@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Familienplaner</string>
+    <string name="setup_subtitle">Wähle, wo dein Familienplaner läuft.</string>
+    <string name="mode_cloud">Cloud-Server</string>
+    <string name="mode_own">Eigener Server</string>
+    <string name="type_access">Cloudflare Access</string>
+    <string name="type_local">Lokal</string>
+    <string name="address">Adresse</string>
+    <string name="address_hint">https://familie.deine-domain.de</string>
+    <string name="server">Server</string>
+    <string name="server_hint">http://192.168.1.20</string>
+    <string name="port">Port</string>
+    <string name="port_hint">3000</string>
+    <string name="connect">Verbinden</string>
+    <string name="connecting">Verbindung wird hergestellt …</string>
+    <string name="email">E-Mail-Adresse</string>
+    <string name="email_hint">name@beispiel.de</string>
+    <string name="request_code">Code anfordern</string>
+    <string name="requesting_code">Code wird angefordert …</string>
+    <string name="code_title">Code eingeben</string>
+    <string name="code_subtitle">Cloudflare Access hat einen Code an %1$s geschickt.</string>
+    <string name="code_hint">Code</string>
+    <string name="sign_in">Anmelden</string>
+    <string name="verifying">Wird geprüft …</string>
+    <string name="back">Zurück</string>
+    <string name="new_code">Neuen Code anfordern</string>
+    <string name="show_login_page">Anmeldeseite anzeigen</string>
+    <string name="login_page_title">Anmeldeseite von Cloudflare Access</string>
+    <string name="close">Schließen</string>
+    <string name="checking">Anmeldung wird geprüft …</string>
+    <string name="menu">Menü</string>
+    <string name="menu_back">Zurück</string>
+    <string name="menu_reload">Neu laden</string>
+    <string name="menu_browser">Im Browser öffnen</string>
+    <string name="menu_keep_on">Bildschirm anlassen</string>
+    <string name="menu_fullscreen">Vollbild</string>
+    <string name="menu_logout">Abmelden</string>
+    <string name="menu_info">Info</string>
+    <string name="info">Info</string>
+</resources>

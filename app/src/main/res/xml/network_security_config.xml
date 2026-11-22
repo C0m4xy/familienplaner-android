@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Wie macOS/iOS (NSAllowsLocalNetworking): unverschlüsseltes http ist erlaubt,
+     damit der Planer auch im Heimnetz per http://192.168.…:3000 erreichbar ist. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

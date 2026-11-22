@@ -1,0 +1,14 @@
+package de.comaxy.familienplaner
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+
+/** Nach dem Einschalten des Geräts bzw. einem App-Update die Mitteilungs-Verbindung wieder starten. */
+class BootReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+            Push.start(context)
+        }
+    }
+}
