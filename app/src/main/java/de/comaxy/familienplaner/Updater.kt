@@ -30,6 +30,9 @@ object Updater {
     private const val CHECK_EVERY = 12 * 3600_000L
     const val ACTION_DONE = "de.comaxy.familienplaner.UPDATE_DONE"
 
+    /** Update, das auf die Installations-Erlaubnis wartet – wird nach der Rückkehr fortgesetzt. */
+    var pending: Release? = null
+
     data class Release(val code: Int, val name: String, val apk: String, val sha256: String, val notes: String)
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("update", Context.MODE_PRIVATE)
@@ -135,7 +138,7 @@ object Updater {
                     AlertDialog.Builder(activity)
                         .setTitle("Einmalige Erlaubnis nötig")
                         .setMessage("Damit sich die App selbst aktualisieren kann, bitte im nächsten Schritt „Aus dieser Quelle zulassen“ einschalten und danach zurückkehren.")
-                        .setPositiveButton("Weiter") { _, _ -> openInstallPermission(activity) }
+                        .setPositiveButton("Weiter") { _, _ -> pending = r; openInstallPermission(activity) }
                         .setNegativeButton("Abbrechen", null).show()
                     return@setPositiveButton
                 }

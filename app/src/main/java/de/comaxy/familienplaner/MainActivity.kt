@@ -100,7 +100,23 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        val pending = Updater.pending
+        if (pending != null && Updater.canInstall(this)) {   // zurück aus „Aus dieser Quelle zulassen“
+            Updater.pending = null
+            android.widget.Toast.makeText(this, "Update wird geladen …", android.widget.Toast.LENGTH_SHORT).show()
+            runUpdate { Updater.install(this, pending) }
+            return
+        }
         if (Updater.due(this)) checkForUpdate(silent = true)   // Tablet bleibt oft tagelang offen
+    }
+
+    private fun runUpdate(job: suspend () -> Unit) {
+        scope.launch {
+            try { job() } catch (e: Exception) {
+                android.app.AlertDialog.Builder(this@MainActivity).setTitle("Update fehlgeschlagen")
+                    .setMessage(e.message ?: e.toString()).setPositiveButton("OK", null).show()
+            }
+        }
     }
 
     /** Neue Version im GitHub-Repository? silent = ohne Meldung, wenn nichts Neues da ist. */
@@ -111,14 +127,8 @@ class MainActivity : Activity() {
                 if (!silent) android.widget.Toast.makeText(this@MainActivity, "Update-Prüfung nicht möglich: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
                 return@launch
             }
-            if (r != null) Updater.offer(this@MainActivity, r) { job ->
-                scope.launch {
-                    try { job() } catch (e: Exception) {
-                        android.app.AlertDialog.Builder(this@MainActivity).setTitle("Update fehlgeschlagen")
-                            .setMessage(e.message ?: e.toString()).setPositiveButton("OK", null).show()
-                    }
-                }
-            } else if (!silent) android.widget.Toast.makeText(this@MainActivity, "Die App ist aktuell (Version ${Updater.currentName(this@MainActivity)}).", android.widget.Toast.LENGTH_LONG).show()
+            if (r != null) Updater.offer(this@MainActivity, r) { job -> runUpdate(job) }
+            else if (!silent) android.widget.Toast.makeText(this@MainActivity, "Die App ist aktuell (Version ${Updater.currentName(this@MainActivity)}).", android.widget.Toast.LENGTH_LONG).show()
         }
     }
 
