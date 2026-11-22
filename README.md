@@ -43,6 +43,12 @@ Ergebnis: `build/Familienplaner.apk`. Beim ersten Lauf wird ein Signierschlüsse
 **aufheben**, sonst lassen sich spätere Versionen nicht über die installierte App installieren.
 Alternativ lässt sich der Ordner direkt in Android Studio öffnen.
 
+## Passkeys (ab App-Version 1.3)
+Der eingebettete Browser darf Passkeys im Namen der App nutzen (`androidx.webkit`, `WEB_AUTHENTICATION_SUPPORT_FOR_APP`).
+Voraussetzungen: Android 9 oder neuer, aktuelles „Android System WebView“ und auf der Website die Freigabe
+`/.well-known/assetlinks.json` mit dem SHA-256-Fingerabdruck des Signierschlüssels (beim Cloud-Server famplan.comaxy.de hinterlegt).
+Ein anderer Signierschlüssel braucht einen neuen Fingerabdruck in dieser Datei.
+
 ## Automatische Updates
 Die App sucht beim Start (und danach alle 12 Stunden) im öffentlichen Repository
 [C0m4xy/familienplaner-android](https://github.com/C0m4xy/familienplaner-android/releases) nach einer neueren Version.
