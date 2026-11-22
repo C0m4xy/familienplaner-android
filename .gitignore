@@ -4,5 +4,6 @@ app/build/
 local.properties
 signing/
 *.apk
+!Install/*.apk
 .DS_Store
 .kotlin/

@@ -1,10 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Wie macOS/iOS (NSAllowsLocalNetworking): unverschlüsseltes http ist erlaubt,
-     damit der Planer auch im Heimnetz per http://192.168.…:3000 erreichbar ist. -->
+<!-- Nur System-Zertifikate (keine vom Nutzer installierten CAs).
+     http ist technisch erlaubt, weil der Planer im Heimnetz oft per http://192.168.…:3000 läuft;
+     die App selbst lässt http nur für Adressen im eigenen Netz zu (ServerConfig.isPrivateHost).
+     Für die eigenen Domains und GitHub (Updates) ist http grundsätzlich verboten. -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">comaxy.de</domain>
+        <domain includeSubdomains="true">cloudflareaccess.com</domain>
+        <domain includeSubdomains="true">github.com</domain>
+        <domain includeSubdomains="true">githubusercontent.com</domain>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
 </network-security-config>

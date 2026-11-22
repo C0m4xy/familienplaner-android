@@ -1,15 +1,9 @@
 # Familienplaner für Android-Tablets
 
 Native Android-App für den Familienplaner – das Gegenstück zu den Apps in `../Familienplaner-macOS`
-und `../Familienplaner-iOS`. Läuft ab **Android 6.0**, ausgelegt für Tablets (quer und hoch).
+und `../Familienplaner-iOS`. Läuft ab **Android 14**, ausgelegt für Tablets (quer und hoch). Zielplattform Android 16.
 
-### Wichtig bei älteren Tablets (Android 6/7)
-Die App zeigt den Planer mit dem eingebauten Browser-Baustein **„Android System WebView“**. Auf alten Geräten
-ist der oft seit Jahren nicht aktualisiert (Android 6 wurde mit Version 44 ausgeliefert). Dann:
-**Play Store → „Android System WebView“ aktualisieren** (unter Android 7–9 stattdessen „Chrome“), danach App neu starten.
-- unter Version 80 bleibt der Planer leer → die App warnt beim Start und bietet den Play-Store-Link an
-- Android 6 bekommt höchstens Version 106 → der Planer läuft, einige Farbtöne (CSS `color-mix`, erst ab 111) fehlen
-- die installierte Version steht im **Info**-Dialog
+**Neueste APK:** [`Install/`](Install/) bzw. die [Releases](https://github.com/C0m4xy/familienplaner-android/releases).
 
 ## Server wählen
 | Auswahl | Was passiert |
@@ -45,9 +39,25 @@ Alternativ lässt sich der Ordner direkt in Android Studio öffnen.
 
 ## Passkeys (ab App-Version 1.3)
 Der eingebettete Browser darf Passkeys im Namen der App nutzen (`androidx.webkit`, `WEB_AUTHENTICATION_SUPPORT_FOR_APP`).
-Voraussetzungen: Android 9 oder neuer, aktuelles „Android System WebView“ und auf der Website die Freigabe
+Voraussetzungen: aktuelles „Android System WebView“ und auf der Website die Freigabe
 `/.well-known/assetlinks.json` mit dem SHA-256-Fingerabdruck des Signierschlüssels (beim Cloud-Server famplan.comaxy.de hinterlegt).
 Ein anderer Signierschlüssel braucht einen neuen Fingerabdruck in dieser Datei.
+
+## Sicherheit
+- **Brücke nur zum eigenen Planer:** Die Planer-Seite spricht die App über `window.FamilienplanerAndroid` an. Diese Brücke
+  gibt es nur auf Seiten der eingestellten Adresse (`addWebMessageListener`/`addDocumentStartJavaScript` mit Herkunftsregel) –
+  fremde Seiten und eingebettete fremde Inhalte erreichen sie nicht.
+- **Verschlüsselung:** http nur für Adressen im eigenen Netz (192.168.x.x, 10.x.x.x, *.local, …); für die eigenen Domains
+  und GitHub ist http gesperrt. Nur System-Zertifikate, keine nutzerinstallierten CAs. Keine unsicheren Inhalte auf https-Seiten.
+- **Browser gehärtet:** kein Zugriff auf lokale Dateien/Inhalte, kein Standort, Safe Browsing an. Externe Links nur für
+  http(s), mailto, tel, sms, webcal und geo – nie `intent:`. Anmelde-Cookies gehen bei Downloads nur an den eigenen Planer.
+- **Gespeicherte Daten:** keine Sicherung in die Cloud und keine Übertragung auf neue Geräte; die Familien-PIN für
+  Mitteilungen liegt verschlüsselt im Android-Keystore (AES-GCM).
+- **Mitteilungen:** auf dem Sperrbildschirm nur „Neue Mitteilung“; Antippen öffnet nur Seiten des eigenen Planers.
+- **Updates:** nur über https von GitHub; vor der Installation werden Prüfsumme, Paketname, Versionsnummer und der
+  Signierschlüssel (muss dem der installierten App entsprechen) geprüft.
+- **App:** Code mit R8 verkleinert und verschleiert; Schutz gegen Task-Übernahme (`taskAffinity`) und verdeckte Eingaben
+  (`filterTouchesWhenObscured`).
 
 ## Automatische Updates
 Die App sucht beim Start (und danach alle 12 Stunden) im öffentlichen Repository
@@ -62,10 +72,11 @@ Neue Version veröffentlichen:
 
 Wichtig: Updates müssen mit **demselben Signierschlüssel** (`signing/`, nicht im Repository) gebaut werden.
 
-## Auf das Tablet bringen
+## Erstinstallation auf dem Tablet
+Die aktuelle APK liegt immer im Ordner `Install/` (wird bei jedem Build ersetzt).
 - **Per Kabel:** Entwickleroptionen + USB-Debugging am Tablet einschalten, dann
-  `adb install -r build/Familienplaner.apk`
-- **Ohne Kabel:** APK aufs Tablet kopieren (z. B. per Mail oder Cloud-Speicher), antippen und
+  `adb install -r Install/Familienplaner-<Version>.apk`
+- **Ohne Kabel:** APK aufs Tablet laden (z. B. von der Release-Seite) (z. B. per Mail oder Cloud-Speicher), antippen und
   „Installation aus unbekannten Quellen“ für diese App erlauben.
 
 ## Aufbau
@@ -94,5 +105,3 @@ Mitteilungen der letzten Stunde beim nächsten Verbinden nach. Antippen öffnet 
 Abmelden in der App oder „Ausschalten“ im Planer beendet die Verbindung. Voraussetzung: Planer-Server ab Version 2026-11-22-19-25.
 
 ## Einschränkungen
-- **Passkeys** der Cloud-Anmeldung werden im eingebetteten Browser nicht angeboten –
-  dort mit Passwort + Authenticator-Code (TOTP) anmelden.

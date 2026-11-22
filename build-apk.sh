@@ -28,4 +28,9 @@ fi
 ./gradlew assembleRelease -q
 mkdir -p build
 cp app/build/outputs/apk/release/app-release.apk build/Familienplaner.apk
-echo "Fertig: $PWD/build/Familienplaner.apk"
+# Aktuelle APK zusätzlich im Ordner Install ablegen (immer nur die neueste Version)
+NAME=$(grep -E '^\s*versionName\s*=' app/build.gradle.kts | grep -oE '"[^"]+"' | tr -d '"')
+mkdir -p Install
+find Install -name "*.apk" -delete
+cp build/Familienplaner.apk "Install/Familienplaner-$NAME.apk"
+echo "Fertig: $PWD/build/Familienplaner.apk (Kopie: Install/Familienplaner-$NAME.apk)"

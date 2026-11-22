@@ -14,14 +14,14 @@ val signingProps = Properties().apply {
 
 android {
     namespace = "de.comaxy.familienplaner"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "de.comaxy.familienplaner"
-        minSdk = 23          // Android 6.0
-        targetSdk = 35
-        versionCode = 5
-        versionName = "1.4"
+        minSdk = 34          // Android 14
+        targetSdk = 36
+        versionCode = 6
+        versionName = "1.5"
     }
 
     signingConfigs {
@@ -37,7 +37,10 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8: verkleinert und verschleiert den Code, entfernt Ungenutztes
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }

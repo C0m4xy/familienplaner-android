@@ -15,12 +15,16 @@ git rev-parse "$TAG" >/dev/null 2>&1 && { echo "Version $NAME gibt es schon – 
 APK="Familienplaner-$NAME.apk"
 cp build/Familienplaner.apk "build/$APK"
 SHA=$(shasum -a 256 "build/$APK" | cut -d' ' -f1)
-python3 - "$CODE" "$NAME" "$APK" "$SHA" "$NOTES" > build/update.json <<'PY'
+MINSDK=$(grep -E '^\s*minSdk\s*=' app/build.gradle.kts | grep -oE '[0-9]+' | head -1)
+python3 - "$CODE" "$NAME" "$APK" "$SHA" "$NOTES" "$MINSDK" > build/update.json <<'PY'
 import json, sys
-c, n, a, s, notes = sys.argv[1:]
-print(json.dumps({"versionCode": int(c), "versionName": n, "apk": a, "sha256": s, "notes": notes}, ensure_ascii=False, indent=2))
+c, n, a, s, notes, m = sys.argv[1:]
+print(json.dumps({"versionCode": int(c), "versionName": n, "minSdk": int(m), "apk": a, "sha256": s, "notes": notes}, ensure_ascii=False, indent=2))
 PY
 
+# Aktuelle APK im Ordner Install mit veröffentlichen (fester Download-Ort im Repository)
+git add -f Install
+git commit -q -m "Install: Familienplaner $NAME" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" || true
 git tag -a "$TAG" -m "Version $NAME"
 git push origin HEAD "$TAG"
 gh release create "$TAG" "build/$APK" build/update.json --title "Familienplaner $NAME" --notes "$NOTES"

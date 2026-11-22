@@ -37,15 +37,17 @@ object Push {
 
     fun enabled(ctx: Context) = prefs(ctx).getString("url", null) != null
     fun url(ctx: Context): String? = prefs(ctx).getString("url", null)
-    fun pin(ctx: Context): String = prefs(ctx).getString("pin", "") ?: ""
+    /** Familien-PIN liegt nur verschlüsselt (Android-Keystore) auf dem Gerät. */
+    fun pin(ctx: Context): String = prefs(ctx).getString("pinEnc", null)?.let { SecretStore.decrypt(it) } ?: ""
 
     fun enable(ctx: Context, url: String, pin: String) {
-        prefs(ctx).edit().putString("url", url).putString("pin", pin).apply()
+        prefs(ctx).edit().putString("url", url).remove("pin")
+            .apply { if (pin.isNotEmpty()) putString("pinEnc", SecretStore.encrypt(pin)) else remove("pinEnc") }.apply()
         start(ctx)
     }
 
     fun disable(ctx: Context) {
-        prefs(ctx).edit().remove("url").remove("pin").apply()
+        prefs(ctx).edit().remove("url").remove("pin").remove("pinEnc").apply()
         ctx.stopService(Intent(ctx, PushService::class.java))
         (ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(ID_STATUS)
     }
@@ -54,14 +56,13 @@ object Push {
         if (!enabled(ctx)) return
         val i = Intent(ctx, PushService::class.java)
         try {
-            if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
+            ctx.startForegroundService(i)
         } catch (_: Exception) {
             // z. B. Android 12+: Start aus dem Hintergrund nicht erlaubt – beim nächsten Öffnen der App erneut
         }
     }
 
     fun channels(ctx: Context) {
-        if (Build.VERSION.SDK_INT < 26) return
         val nm = ctx.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CH_STATUS, "Verbindung zum Planer", NotificationManager.IMPORTANCE_MIN).apply {
             description = "Dauerhafte Anzeige, solange die App auf Mitteilungen wartet"
@@ -75,9 +76,7 @@ object Push {
         })
     }
 
-    private fun builder(ctx: Context, channel: String): Notification.Builder =
-        if (Build.VERSION.SDK_INT >= 26) Notification.Builder(ctx, channel)
-        else @Suppress("DEPRECATION") Notification.Builder(ctx)
+    private fun builder(ctx: Context, channel: String): Notification.Builder = Notification.Builder(ctx, channel)
 
     /** Öffnet die App (optional mit Pfad im Planer, z. B. „/?ring=…“). */
     private fun openIntent(ctx: Context, path: String?, code: Int): PendingIntent {
@@ -95,7 +94,6 @@ object Push {
             .setOngoing(true)
             .setShowWhen(false)
             .setContentIntent(openIntent(ctx, null, 0))
-            .apply { @Suppress("DEPRECATION") setPriority(Notification.PRIORITY_MIN) }
             .build()
 
     /** Zeigt eine Mitteilung vom Planer an: {title, body, tag, url, kind, badge}. */
@@ -109,16 +107,24 @@ object Push {
             .setContentText(data.optString("body"))
             .setStyle(Notification.BigTextStyle().bigText(data.optString("body")))
             .setAutoCancel(true)
-            .setContentIntent(openIntent(ctx, data.optString("url").ifEmpty { null }, id))
+            .setContentIntent(openIntent(ctx, safePath(data.optString("url")), id))
+            // Sperrbildschirm: nur „Neue Mitteilung“, Inhalt erst nach dem Entsperren
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .setPublicVersion(builder(ctx, if (kind == "ring") CH_RING else CH_MSG)
+                .setSmallIcon(R.drawable.ic_notify)
+                .setContentTitle(if (kind == "ring") "🔔 Es klingelt" else "Familienplaner")
+                .setContentText("Neue Mitteilung").build())
             .apply {
                 if (data.optInt("badge") > 0) setNumber(data.optInt("badge"))
                 if (kind == "ring") setCategory(Notification.CATEGORY_CALL)
-                @Suppress("DEPRECATION") setPriority(Notification.PRIORITY_HIGH)
-                @Suppress("DEPRECATION") setDefaults(Notification.DEFAULT_ALL)
             }
             .build()
         (ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(id, n)
     }
+
+    /** Nur Pfade innerhalb des Planers („/…“), keine fremden Adressen aus einer Mitteilung öffnen. */
+    private fun safePath(p: String): String? =
+        p.takeIf { it.startsWith("/") && !it.startsWith("//") && !it.contains('\\') && it.length < 500 }
 
     /** Die Anmeldung beim Planer ist abgelaufen – ohne neue Anmeldung kommen keine Mitteilungen. */
     fun showLoginHint(ctx: Context) {

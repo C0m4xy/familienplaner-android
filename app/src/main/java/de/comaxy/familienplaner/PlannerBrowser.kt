@@ -11,7 +11,6 @@ import android.os.Environment
 import android.os.Message
 import android.util.Base64
 import android.webkit.CookieManager
-import android.webkit.JavascriptInterface
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
@@ -20,13 +19,22 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import androidx.webkit.JavaScriptReplyProxy
+import androidx.webkit.ScriptHandler
+import androidx.webkit.WebMessageCompat
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import org.json.JSONObject
 
 /**
  * Anzeige des Planers: Navigation, Dialoge (alert/confirm/prompt übernimmt Android selbst),
  * Datei-Auswahl, Downloads (auch `blob:`-Downloads wie die Datensicherung) und Links.
+ *
+ * Sicherheit: Die Brücke zur App (`window.FamilienplanerAndroid`) gibt es nur auf Seiten des
+ * eingestellten Planers ([origin], z. B. „https://famplan.comaxy.de“) – fremde Seiten und
+ * eingebettete fremde Inhalte erreichen sie nicht (addWebMessageListener mit Herkunftsregel).
  */
-class PlannerBrowser(private val activity: MainActivity) {
+class PlannerBrowser(private val activity: MainActivity, private val origin: String) {
 
     var onSessionExpired: () -> Unit = {}
     var onPageColor: (Int) -> Unit = {}
@@ -44,7 +52,7 @@ class PlannerBrowser(private val activity: MainActivity) {
         AccessLogin.configure(webView)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
         webView.setBackgroundColor(Color.TRANSPARENT)
-        webView.addJavascriptInterface(Bridge(), "FamilienplanerAndroid")
+        installBridge()
         webView.webViewClient = Client()
         webView.webChromeClient = Chrome()
         webView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
@@ -55,8 +63,55 @@ class PlannerBrowser(private val activity: MainActivity) {
     fun open(url: String) = webView.loadUrl(url)
 
     /** Antwort an die Seite (Ergebnis von pushEnable). */
-    fun pushResult(ok: Boolean) =
+    fun pushResult(ok: Boolean) {
+        refreshInfo()
         webView.evaluateJavascript("window.fpPushDone&&window.fpPushDone($ok)", null)
+    }
+
+    // region Brücke zur Seite (nur eigener Planer)
+
+    private var infoScript: ScriptHandler? = null
+    private val originHost = AccessLogin.hostOf(origin)
+
+    private fun installBridge() {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) ||
+            !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return   // sehr altes WebView: ohne Brücke
+        WebViewCompat.addWebMessageListener(webView, "FamilienplanerBridge", setOf(origin)) { _, message, source, isMainFrame, _ ->
+            if (isMainFrame && source.toString().trimEnd('/') == origin) onBridgeMessage(message)
+        }
+        refreshInfo()
+    }
+
+    /** Stellt `window.FamilienplanerAndroid` bereit; pushInfo() liefert den Stand beim Laden der Seite. */
+    private fun refreshInfo() {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
+        val info = JSONObject().put("device", Push.device(activity)).put("enabled", Push.enabled(activity)).toString()
+        val js = """(function(){ if (window.top !== window) return; let info = ${JSONObject.quote(info)};
+            const send = o => FamilienplanerBridge.postMessage(JSON.stringify(o));
+            window.FamilienplanerAndroid = Object.freeze({
+              pushInfo: () => info,
+              pushEnable: (url, pin) => send({ a: 'pushEnable', url: String(url), pin: String(pin || '') }),
+              pushDisable: () => { info = info.replace('"enabled":true', '"enabled":false'); send({ a: 'pushDisable' }); },
+              saveFile: (name, type, data) => send({ a: 'saveFile', name: String(name), type: String(type), data: String(data) })
+            }); })();"""
+        infoScript?.remove()
+        infoScript = WebViewCompat.addDocumentStartJavaScript(webView, js, setOf(origin))
+    }
+
+    private fun onBridgeMessage(message: WebMessageCompat) {
+        val o = try { JSONObject(message.data ?: return) } catch (_: Exception) { return }
+        when (o.optString("a")) {
+            "pushEnable" -> activity.enablePush(o.optString("url"), o.optString("pin"))
+            "pushDisable" -> { Push.disable(activity); refreshInfo() }
+            "saveFile" -> {
+                val bytes = try { Base64.decode(o.optString("data"), Base64.DEFAULT) } catch (_: IllegalArgumentException) { return }
+                if (bytes.size > 50 * 1024 * 1024) return
+                askWhereToSave(o.optString("name").take(120).ifBlank { "download" }, o.optString("type").take(100), bytes)
+            }
+        }
+    }
+
+    // endregion
 
     fun reload() {
         failedUrl?.let { failedUrl = null; webView.loadUrl(it); return }
@@ -85,13 +140,24 @@ class PlannerBrowser(private val activity: MainActivity) {
             val host = url.host?.lowercase() ?: ""
             val scheme = url.scheme?.lowercase() ?: ""
 
+            // Knöpfe der eigenen Fehlerseite
+            if (host == ERROR_HOST) {
+                when (url.path) { "/retry" -> reload(); "/change" -> onChangeServer() }
+                return true
+            }
+
             // Umleitung zur Anmeldeseite = Anmeldung abgelaufen → wieder die native Anmeldung zeigen
             if (host.endsWith("cloudflareaccess.com") && request.isForMainFrame) {
                 onSessionExpired()
                 return true
             }
-            // mailto:, tel:, webcal: (→ Kalender-App) …
-            if (scheme !in listOf("http", "https", "about", "blob", "data", "javascript")) {
+            // mailto:, tel:, webcal: (→ Kalender-App) … – nur bekannte Schemata, nie intent:/file:/content:
+            if (scheme !in listOf("http", "https", "about", "blob", "data")) {
+                if (scheme in EXTERNAL_SCHEMES) openExternally(url)
+                return true
+            }
+            // Unverschlüsselt (http) nur im Heimnetz – sonst nicht in der App laden
+            if (scheme == "http" && request.isForMainFrame && !ServerConfig.isPrivateHost(host)) {
                 openExternally(url)
                 return true
             }
@@ -116,7 +182,7 @@ class PlannerBrowser(private val activity: MainActivity) {
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
             if (!request.isForMainFrame) return
             failedUrl = request.url.toString()
-            view.loadDataWithBaseURL(null, errorPage(request.url.toString(), error.description?.toString() ?: ""),
+            view.loadDataWithBaseURL("https://$ERROR_HOST/", errorPage(request.url.toString(), error.description?.toString() ?: ""),
                 "text/html", "utf-8", null)
         }
 
@@ -133,8 +199,8 @@ class PlannerBrowser(private val activity: MainActivity) {
         override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?): Boolean {
             val href = view.hitTestResult.extra ?: return false
             val uri = Uri.parse(href)
-            if (uri.host?.lowercase() == view.url?.let { AccessLogin.hostOf(it) }) view.loadUrl(href)
-            else openExternally(uri)
+            if (uri.scheme?.lowercase() in listOf("http", "https") && uri.host?.lowercase() == originHost) view.loadUrl(href)
+            else if (uri.scheme?.lowercase() in EXTERNAL_SCHEMES) openExternally(uri)
             return false
         }
 
@@ -187,6 +253,8 @@ class PlannerBrowser(private val activity: MainActivity) {
                 webView.evaluateJavascript(blobFetchJs(url, mimeType ?: ""), null)
             }
             url.startsWith("http") -> {
+                // Anmelde-Cookies nur an den eigenen Planer – fremde Downloads im Browser öffnen
+                if (AccessLogin.hostOf(url) != originHost) { openExternally(Uri.parse(url)); return }
                 val name = URLUtil.guessFileName(url, contentDisposition, mimeType)
                 val request = DownloadManager.Request(Uri.parse(url))
                     .setMimeType(mimeType)
@@ -194,49 +262,12 @@ class PlannerBrowser(private val activity: MainActivity) {
                     .addRequestHeader("User-Agent", webView.settings.userAgentString)
                     .setTitle(name)
                     .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                    .apply {
-                        // Bis Android 9 bräuchte der öffentliche Download-Ordner eine Speicher-Berechtigung
-                        if (android.os.Build.VERSION.SDK_INT >= 29) setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
-                        else setDestinationInExternalFilesDir(activity, Environment.DIRECTORY_DOWNLOADS, name)
-                    }
+                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
                 val dm = activity.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
                 dm.enqueue(request)
                 toast("Download gestartet: $name")
             }
         }
-    }
-
-    /** Wird von der Seite aufgerufen, sobald der Inhalt eines blob:-Downloads gelesen ist. */
-    private inner class Bridge {
-        @JavascriptInterface
-        fun saveFile(name: String, mimeType: String, base64: String) {
-            val bytes = try {
-                Base64.decode(base64, Base64.DEFAULT)
-            } catch (_: IllegalArgumentException) {
-                return
-            }
-            activity.runOnUiThread { askWhereToSave(name.ifBlank { "download" }, mimeType, bytes) }
-        }
-
-        /** Knöpfe der Fehlerseite (nur dort eingebunden, siehe errorPage). */
-        @JavascriptInterface
-        fun retry() = activity.runOnUiThread { reload() }
-
-        @JavascriptInterface
-        fun changeServer() = activity.runOnUiThread { onChangeServer() }
-
-        // Mitteilungen: Die Seite meldet das Gerät mit der App-Kennung an (statt Web-Push)
-        @JavascriptInterface
-        fun pushInfo(): String = JSONObject()
-            .put("device", Push.device(activity))
-            .put("enabled", Push.enabled(activity))
-            .toString()
-
-        @JavascriptInterface
-        fun pushEnable(streamUrl: String, pin: String) = activity.runOnUiThread { activity.enablePush(streamUrl, pin) }
-
-        @JavascriptInterface
-        fun pushDisable() = activity.runOnUiThread { Push.disable(activity) }
     }
 
     /** Wie „In Dateien sichern“ auf iOS: Android fragt, wo die Datei abgelegt werden soll. */
@@ -257,9 +288,11 @@ class PlannerBrowser(private val activity: MainActivity) {
     // endregion
 
     fun openExternally(uri: Uri) {
+        if (uri.scheme?.lowercase() !in EXTERNAL_SCHEMES) return
         var target = uri
         try {
-            activity.startActivity(Intent(Intent.ACTION_VIEW, target).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            activity.startActivity(Intent(Intent.ACTION_VIEW, target).addCategory(Intent.CATEGORY_BROWSABLE)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (_: ActivityNotFoundException) {
             // Keine Kalender-App für webcal: → als https im Browser öffnen
             if (target.scheme == "webcal") {
@@ -276,6 +309,11 @@ class PlannerBrowser(private val activity: MainActivity) {
     private fun toast(text: String) = Toast.makeText(activity, text, Toast.LENGTH_LONG).show()
 
     companion object {
+        /** Schemata, die an andere Apps weitergegeben werden dürfen. */
+        private val EXTERNAL_SCHEMES = setOf("http", "https", "mailto", "tel", "sms", "webcal", "geo")
+        /** Adresse der eigenen Fehlerseite (.invalid gibt es nie im Internet). */
+        private const val ERROR_HOST = "app.familienplaner.invalid"
+
         private const val DOWNLOAD_NAME_HOOK_JS = """
             (function(){
               if (window.__fpDownloadHook) return;
@@ -303,6 +341,7 @@ class PlannerBrowser(private val activity: MainActivity) {
                   fr.onerror = fail;
                   fr.readAsDataURL(blob);
                 });
+                if (!window.FamilienplanerAndroid) return;
                 FamilienplanerAndroid.saveFile(window.__fpDownloadName || 'download',
                   blob.type || ${JSONObject.quote(mimeType)}, data);
               } catch (e) { alert('Download fehlgeschlagen: ' + e); }
@@ -330,8 +369,8 @@ class PlannerBrowser(private val activity: MainActivity) {
               <h1>Keine Verbindung</h1>
               <p>Der Familienplaner unter <b>${esc(url)}</b> ist gerade nicht erreichbar.</p>
               <p style="font-size:13px">${esc(reason)}</p>
-              <button class="main" onclick="FamilienplanerAndroid.retry()">Erneut versuchen</button>
-              <button class="alt" onclick="FamilienplanerAndroid.changeServer()">Verbindung ändern</button>
+              <a href="/retry"><button class="main">Erneut versuchen</button></a>
+              <a href="/change"><button class="alt">Verbindung ändern</button></a>
             </div></body></html>
         """.trimIndent()
 

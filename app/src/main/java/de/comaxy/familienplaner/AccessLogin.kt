@@ -290,6 +290,12 @@ class AccessLogin(context: Context) {
                 loadWithOverviewMode = true
                 useWideViewPort = true
                 setSupportMultipleWindows(false)          // target="_blank" im selben Fenster
+                // Härtung: keine lokalen Dateien/Inhalte, keine unsicheren Inhalte auf https-Seiten
+                allowFileAccess = false
+                allowContentAccess = false
+                mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                setGeolocationEnabled(false)
+                safeBrowsingEnabled = true
                 // Normale Chrome-Kennung (ohne „wv“), damit Cloudflare die normale Seite liefert.
                 userAgentString = userAgentString
                     .replace("; wv)", ")")

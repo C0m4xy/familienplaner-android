@@ -50,7 +50,8 @@ object Updater {
         val json = JSONObject(String(fetch(LATEST + "update.json", 64 * 1024), Charsets.UTF_8))
         val r = Release(json.getInt("versionCode"), json.optString("versionName"), json.getString("apk"),
             json.getString("sha256").lowercase(), json.optString("notes"))
-        if (r.code > currentCode(ctx) && r.apk.matches(Regex("[A-Za-z0-9._-]+\\.apk"))) r else null
+        val minSdk = json.optInt("minSdk", 0)   // Gerät zu alt für die neue Version → nicht anbieten
+        if (r.code > currentCode(ctx) && Build.VERSION.SDK_INT >= minSdk && r.apk.matches(Regex("[A-Za-z0-9._-]+\\.apk"))) r else null
     }
 
     /** APK laden, Prüfsumme vergleichen und Installation starten. */
@@ -58,32 +59,59 @@ object Updater {
         val bytes = withContext(Dispatchers.IO) { fetch(LATEST + r.apk, 100 * 1024 * 1024) }
         val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
         if (hash != r.sha256) throw IllegalStateException("Die heruntergeladene Datei ist beschädigt (Prüfsumme stimmt nicht).")
+        withContext(Dispatchers.IO) { verifySignature(activity, bytes, r.code) }
         withContext(Dispatchers.IO) {
             val pi = activity.packageManager.packageInstaller
             val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
             params.setAppPackageName(activity.packageName)
-            if (Build.VERSION.SDK_INT >= 31) params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+            params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
             val id = pi.createSession(params)
             pi.openSession(id).use { s ->
                 s.openWrite("familienplaner.apk", 0, bytes.size.toLong()).use { it.write(bytes); s.fsync(it) }
                 val i = Intent(activity, UpdateReceiver::class.java).setAction(ACTION_DONE)
-                val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+                val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE   // System trägt das Ergebnis ein
                 s.commit(PendingIntent.getBroadcast(activity, id, i, flags).intentSender)
             }
         }
     }
 
-    /** Ab Android 8 muss der Nutzer der App einmal erlauben, Apps zu installieren. */
-    fun canInstall(ctx: Context) = Build.VERSION.SDK_INT < 26 || ctx.packageManager.canRequestPackageInstalls()
+    /** Der Nutzer muss der App einmal erlauben, Apps zu installieren. */
+    fun canInstall(ctx: Context) = ctx.packageManager.canRequestPackageInstalls()
 
-    fun openInstallPermission(activity: Activity) {
-        if (Build.VERSION.SDK_INT >= 26) activity.startActivity(
-            Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${activity.packageName}")))
+    fun openInstallPermission(activity: Activity) = activity.startActivity(
+        Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${activity.packageName}")))
+
+    /**
+     * Doppelte Absicherung vor dem Installieren: gleiches Paket, höhere Version und
+     * derselbe Signierschlüssel wie die installierte App (Android prüft das zusätzlich selbst).
+     */
+    private fun verifySignature(ctx: Context, apk: ByteArray, expectedCode: Int) {
+        val f = java.io.File(ctx.cacheDir, "update-check.apk")
+        try {
+            f.writeBytes(apk)
+            val pm = ctx.packageManager
+            val flags = android.content.pm.PackageManager.PackageInfoFlags.of(android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES.toLong())
+            val new = pm.getPackageArchiveInfo(f.path, flags) ?: throw IllegalStateException("Update-Datei ist keine gültige App.")
+            val own = pm.getPackageInfo(ctx.packageName, flags)
+            if (new.packageName != ctx.packageName) throw IllegalStateException("Update gehört zu einer anderen App.")
+            if (new.longVersionCode.toInt() != expectedCode) throw IllegalStateException("Update hat eine unerwartete Version.")
+            val certs = { p: android.content.pm.PackageInfo ->
+                (p.signingInfo?.apkContentsSigners ?: emptyArray()).map { MessageDigest.getInstance("SHA-256").digest(it.toByteArray()).toList() }.toSet() }
+            val a = certs(new); val b = certs(own)
+            if (a.isEmpty() || a != b) throw IllegalStateException("Update ist nicht mit dem Schlüssel der App signiert – Installation abgebrochen.")
+        } finally {
+            f.delete()
+        }
     }
+
+    /** Erlaubte Adressen für Update-Downloads (GitHub-Releases und dessen Datei-Server). */
+    private fun allowedHost(h: String) = h == "github.com" || h.endsWith(".githubusercontent.com")
 
     private fun fetch(address: String, max: Int): ByteArray {
         var url = URL(address)
         repeat(5) {   // GitHub leitet zu objects.githubusercontent.com weiter
+            // nur https und nur GitHub – auch nach Weiterleitungen
+            if (url.protocol != "https" || !allowedHost(url.host.lowercase())) throw IllegalStateException("Unerwartete Update-Adresse")
             val c = url.openConnection() as HttpURLConnection
             c.instanceFollowRedirects = false
             c.connectTimeout = 15_000
@@ -93,7 +121,6 @@ object Updater {
                 val code = c.responseCode
                 if (code in 300..399) { url = URL(url, c.getHeaderField("Location")); return@repeat }
                 if (code != 200) throw IllegalStateException("Update-Server meldet $code")
-                if (url.protocol != "https") throw IllegalStateException("Unsichere Update-Adresse")
                 val out = java.io.ByteArrayOutputStream()
                 c.inputStream.use { input ->
                     val buf = ByteArray(64 * 1024)

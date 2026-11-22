@@ -5,7 +5,8 @@
     android:layout_height="match_parent"
     android:background="@color/background"
     android:focusable="true"
-    android:focusableInTouchMode="true">
+    android:focusableInTouchMode="true"
+    android:filterTouchesWhenObscured="true">
 
     <!-- Unsichtbarer Anmelde-Browser: liegt unter der Anmeldemaske und wird nur bei
          „Anmeldeseite anzeigen“ sichtbar. Er braucht echte Größe, damit die Seite

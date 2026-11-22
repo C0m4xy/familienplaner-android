@@ -82,6 +82,7 @@ class MainActivity : Activity() {
         findViewById<FrameLayout>(R.id.loginWebHolder).addView(login.webView, matchParent())
 
         setupInsets()
+        setupBack()
         applyWindowOptions()
         pendingOpen = intent?.getStringExtra(Push.EXTRA_OPEN)
         Push.start(this)   // Mitteilungs-Verbindung (falls eingeschaltet) sicher laufen lassen
@@ -144,13 +145,15 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
-    @Deprecated("Für targetSdk 35 weiterhin aufgerufen")
-    override fun onBackPressed() {
-        when {
-            showingLoginPage -> closeLoginPage()
-            screen == Screen.READY && planner?.goBack() == true -> Unit
-            screen == Screen.ENTER_CODE -> backToSetup()
-            else -> @Suppress("DEPRECATION") super.onBackPressed()
+    /** Zurück-Taste/-Geste (ab Android 16 nur noch über OnBackInvokedCallback). */
+    private fun setupBack() {
+        onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) {
+            when {
+                showingLoginPage -> closeLoginPage()
+                screen == Screen.READY && planner?.goBack() == true -> Unit
+                screen == Screen.ENTER_CODE -> backToSetup()
+                else -> moveTaskToBack(true)   // wie die Standard-Zurück-Geste: App in den Hintergrund
+            }
         }
     }
 
@@ -278,7 +281,7 @@ class MainActivity : Activity() {
     private fun openPlanner() {
         val url = config.targetUrl ?: return
         if (planner != null) return
-        val browser = PlannerBrowser(this)
+        val browser = PlannerBrowser(this, originUrl() ?: return)
         browser.onSessionExpired = { sessionExpired() }
         browser.onPageColor = { color -> pageColor = color; applyBarColors() }
         browser.onChangeServer = {
@@ -577,15 +580,9 @@ class MainActivity : Activity() {
     /** Ab Android 15 zeichnet die App unter Status- und Navigationsleiste → selbst Abstand halten. */
     private fun setupInsets() {
         root.setOnApplyWindowInsetsListener { v, insets ->
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-                val ime = insets.getInsets(WindowInsets.Type.ime())
-                v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
-            } else {
-                @Suppress("DEPRECATION")
-                v.setPadding(insets.systemWindowInsetLeft, insets.systemWindowInsetTop,
-                    insets.systemWindowInsetRight, insets.systemWindowInsetBottom)
-            }
+            val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+            val ime = insets.getInsets(WindowInsets.Type.ime())
+            v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
             insets
         }
         // Anmeldekarte auf Tablets nicht zu breit werden lassen
@@ -603,25 +600,10 @@ class MainActivity : Activity() {
     private fun applyBarColors() {
         val color = if (screen == Screen.READY) pageColor else getColor(R.color.background)
         root.setBackgroundColor(color)
-        @Suppress("DEPRECATION")
-        run {
-            window.statusBarColor = Color.TRANSPARENT
-            window.navigationBarColor = Color.TRANSPARENT
-        }
         val light = (Color.red(color) * 299 + Color.green(color) * 587 + Color.blue(color) * 114) / 1000 > 150
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
-                WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
-            window.insetsController?.setSystemBarsAppearance(if (light) mask else 0, mask)
-        } else {
-            @Suppress("DEPRECATION")
-            var flags = window.decorView.systemUiVisibility
-            @Suppress("DEPRECATION")
-            val lightFlags = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
-            flags = if (light) flags or lightFlags else flags and lightFlags.inv()
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = flags
-        }
+        val mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+            WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+        window.insetsController?.setSystemBarsAppearance(if (light) mask else 0, mask)
     }
 
     /** „Bildschirm anlassen“ und „Vollbild“ aus dem Menü. */
@@ -631,22 +613,14 @@ class MainActivity : Activity() {
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         val full = prefs.getBoolean("fullscreen", false)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            window.setDecorFitsSystemWindows(false)
-            window.insetsController?.let {
-                if (full) {
-                    it.hide(WindowInsets.Type.systemBars())
-                    it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                } else {
-                    it.show(WindowInsets.Type.systemBars())
-                }
+        window.setDecorFitsSystemWindows(false)
+        window.insetsController?.let {
+            if (full) {
+                it.hide(WindowInsets.Type.systemBars())
+                it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                it.show(WindowInsets.Type.systemBars())
             }
-        } else {
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                (if (full) View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY else 0)
         }
         root.requestApplyInsets()
     }
@@ -663,14 +637,12 @@ class MainActivity : Activity() {
 
     /** Von der Planer-Seite: Mitteilungen auf diesem Gerät einschalten. */
     fun enablePush(streamUrl: String, pin: String) {
-        // Nur zum eigenen Planer verbinden (die Adresse kommt von der Seite)
-        val target = config.targetUrl
-        if (target == null || AccessLogin.hostOf(streamUrl) != AccessLogin.hostOf(target) ||
-            !(streamUrl.startsWith("https://") || streamUrl.startsWith("http://"))) {
+        // Nur zum eigenen Planer verbinden (die Adresse kommt von der Seite): exakt Herkunft + Pfad + Gerätekennung
+        val origin = originUrl()
+        if (origin == null || streamUrl != "$origin/api/push-stream?dev=" + Uri.encode(Push.device(this))) {
             planner?.pushResult(false); return
         }
-        if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+        if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             pushPending = streamUrl to pin
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFY)
             return
@@ -689,7 +661,7 @@ class MainActivity : Activity() {
 
     private fun finishEnablePush(streamUrl: String, pin: String) {
         val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
-        if (Build.VERSION.SDK_INT >= 24 && !nm.areNotificationsEnabled()) { planner?.pushResult(false); return }
+        if (!nm.areNotificationsEnabled()) { planner?.pushResult(false); return }
         Push.enable(this, streamUrl, pin)
         planner?.pushResult(true)
         askBatteryExemption()

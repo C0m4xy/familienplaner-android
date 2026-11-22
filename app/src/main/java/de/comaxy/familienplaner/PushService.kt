@@ -65,11 +65,7 @@ class PushService : Service() {
     private fun foreground(text: String) {
         status = text
         val n = Push.statusNotification(this, text)
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(Push.ID_STATUS, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
-        } else {
-            startForeground(Push.ID_STATUS, n)
-        }
+        startForeground(Push.ID_STATUS, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
     }
 
     private fun setStatus(text: String) {
@@ -159,6 +155,7 @@ class PushService : Service() {
             val data = StringBuilder()
             while (running) {
                 val line = reader.readLine() ?: break
+                if (line.length > 16_384 || data.length > 65_536) return Result.NETWORK   // unplausibel groß → neu verbinden
                 when {
                     line.isEmpty() -> {
                         if (event == "push" && data.isNotEmpty()) {

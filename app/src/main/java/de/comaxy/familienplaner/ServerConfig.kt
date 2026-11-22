@@ -43,6 +43,8 @@ class ServerConfig(private val prefs: SharedPreferences) {
                 else -> null
             }
             Mode.LOCAL -> when {
+                buildUrl(localServer, port, "http")?.let { it.startsWith("http://") && !isPrivateHost(Uri.parse(it).host ?: "") } == true ->
+                    "Unverschlüsselt (http) nur im Heimnetz, z. B. 192.168.x.x oder nas.local – im Internet bitte https:// verwenden."
                 port.isNotBlank() && port.trim().toIntOrNull()?.takeIf { it in 1..65535 } == null ->
                     "Der Port muss eine Zahl von 1 bis 65535 sein."
                 buildUrl(localServer, port, "http") == null -> "Bitte eine gültige Server-Adresse eingeben."
@@ -52,6 +54,22 @@ class ServerConfig(private val prefs: SharedPreferences) {
 
     companion object {
         const val CLOUD_URL = "https://famplan.comaxy.de/"
+
+        /** Adresse im eigenen Netz (nur dort ist unverschlüsseltes http erlaubt)? */
+        fun isPrivateHost(raw: String): Boolean {
+            val h = raw.lowercase().trim('[', ']')
+            if (h == "localhost" || h.endsWith(".local") || h.endsWith(".lan") || h.endsWith(".home.arpa") ||
+                h.endsWith(".internal") || h.endsWith(".fritz.box")) return true
+            if (!h.contains('.') && !h.contains(':')) return h.isNotEmpty()   // einzelner Name im Heimnetz, z. B. „nas“
+            val v4 = h.split('.').mapNotNull { it.toIntOrNull() }
+            if (v4.size == 4 && h.count { it == '.' } == 3 && v4.all { it in 0..255 }) {
+                val (a, b) = v4
+                return a == 10 || a == 127 || (a == 172 && b in 16..31) || (a == 192 && b == 168) ||
+                    (a == 169 && b == 254) || (a == 100 && b in 64..127)   // 100.64/10: z. B. Tailscale
+            }
+            if (h.contains(':')) return h == "::1" || h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80")
+            return false
+        }
 
         fun emailIsValid(e: String) = e.trim().let { it.contains("@") && it.contains(".") && !it.contains(" ") }
 
