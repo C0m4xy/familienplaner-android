@@ -70,6 +70,8 @@ class MainActivity : Activity() {
     private lateinit var primaryLabel: TextView
     private lateinit var primaryProgress: ProgressBar
     private lateinit var codeLinks: View
+    private lateinit var demoHint: View
+    private lateinit var demoButton: TextView
     private lateinit var versionLabel: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -368,6 +370,8 @@ class MainActivity : Activity() {
         primaryLabel = findViewById(R.id.primaryLabel)
         primaryProgress = findViewById(R.id.primaryProgress)
         codeLinks = findViewById(R.id.codeLinks)
+        demoHint = findViewById(R.id.demoHint)
+        demoButton = findViewById(R.id.demoButton)
         versionLabel = findViewById(R.id.versionLabel)
         versionLabel.text = "Version ${Updater.currentName(this)} · Build ${BuildConfig.BUILD_DATE}"
 
@@ -406,6 +410,7 @@ class MainActivity : Activity() {
         findViewById<View>(R.id.backButton).setOnClickListener { backToSetup() }
         findViewById<View>(R.id.newCodeButton).setOnClickListener { launchSafely { connect() } }
         showLoginPage.setOnClickListener { openLoginPage() }
+        demoButton.setOnClickListener { requestDemo() }
         findViewById<View>(R.id.closeLoginPage).setOnClickListener { closeLoginPage() }
         findViewById<View>(R.id.menuButton).setOnClickListener { showMenu(it) }
         findViewById<View>(R.id.infoButton).setOnClickListener { showInfo() }
@@ -473,6 +478,17 @@ class MainActivity : Activity() {
             .show()
     }
 
+    /** „Demo anfordern“: Cloud-Server übernehmen und direkt das Demo-Formular der Anmeldeseite öffnen. */
+    private fun requestDemo() {
+        if (screen != Screen.SETUP || selectedMode() != ServerConfig.Mode.CLOUD) return
+        hideKeyboard()
+        saveFields()
+        message = null
+        getSharedPreferences("settings", MODE_PRIVATE).edit().putBoolean("configured", true).apply()
+        pendingOpen = ServerConfig.DEMO_PATH
+        show(Screen.READY)
+    }
+
     private fun primaryAction() {
         if (!primaryButton.isEnabled) return
         hideKeyboard()
@@ -520,6 +536,11 @@ class MainActivity : Activity() {
         localGroup.visibility = if (mode == ServerConfig.Mode.LOCAL) View.VISIBLE else View.GONE
         codeField.visibility = if (codeStep) View.VISIBLE else View.GONE
         codeLinks.visibility = if (codeStep) View.VISIBLE else View.GONE
+        // „Demo anfordern“ gibt es nur beim Cloud-Server (famplan.comaxy.de)
+        val demo = if (!codeStep && mode == ServerConfig.Mode.CLOUD) View.VISIBLE else View.GONE
+        demoHint.visibility = demo
+        demoButton.visibility = demo
+        demoButton.isEnabled = !busy
         for (v in listOf(accessUrlField, localUrlField, portField, emailField, codeField)) v.isEnabled = !busy
         for (g in listOf(modeGroup, ownType)) for (i in 0 until g.childCount) g.getChildAt(i).isEnabled = !busy
 

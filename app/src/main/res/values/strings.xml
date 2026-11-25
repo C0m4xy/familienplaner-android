@@ -38,4 +38,6 @@
     <string name="menu_logout">Abmelden</string>
     <string name="menu_info">Info</string>
     <string name="info">Info</string>
+    <string name="demo_hint">Noch keinen Zugang? Probiere den Familienplaner 7 Tage lang mit einer Beispiel-Familie aus.</string>
+    <string name="demo_request">🎁 Demo anfordern</string>
 </resources>

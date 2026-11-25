@@ -55,6 +55,9 @@ class ServerConfig(private val prefs: SharedPreferences) {
     companion object {
         const val CLOUD_URL = "https://famplan.comaxy.de/"
 
+        /** Demo-Formular auf der Anmeldeseite des Cloud-Servers (Familienplaner-Multitenant, POST /auth/api/demo) */
+        const val DEMO_PATH = "/login#demo"
+
         /** Adresse im eigenen Netz (nur dort ist unverschlüsseltes http erlaubt)? */
         fun isPrivateHost(raw: String): Boolean {
             val h = raw.lowercase().trim('[', ']')

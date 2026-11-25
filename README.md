@@ -12,6 +12,11 @@ und `../Familienplaner-iOS`. Läuft ab **Android 14**, ausgelegt für Tablets (q
 | **Eigener Server → Cloudflare Access** | Adresse + E-Mail-Adresse → **Code anfordern**. Die App meldet sich im Hintergrund bei Cloudflare Access an und schickt den Code aus der E-Mail weiter (sechs Ziffern → automatische Anmeldung). |
 | **Eigener Server → Lokal** | Server (z. B. `192.168.1.20` oder `http://nas.local`) + Port (z. B. `3000`) → **Verbinden**. Ohne Angabe wird `http://` verwendet. |
 
+**🎁 Demo anfordern** (ab Version 1.7, nur bei „Cloud-Server“): öffnet direkt das Demo-Formular unter
+`https://famplan.comaxy.de/login#demo` (Familienplaner-Multitenant, `POST /auth/api/demo`). Nach der Freigabe kommen
+die Zugangsdaten per E-Mail, die Demo läuft 7 Tage. Kennt der Server `#demo` noch nicht, erscheint die normale
+Anmeldeseite mit ihrem eigenen Knopf „Demo anfordern“.
+
 Klappt die automatische Cloudflare-Anmeldung einmal nicht (z. B. Captcha), öffnet **„Anmeldeseite anzeigen“**
 die Cloudflare-Seite direkt in der App. Läuft die Anmeldung ab, erscheint wieder die Anmeldemaske.
 

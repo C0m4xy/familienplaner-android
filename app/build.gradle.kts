@@ -22,8 +22,8 @@ android {
         applicationId = "de.comaxy.familienplaner"
         minSdk = 34          // Android 14
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.6"
+        versionCode = 8
+        versionName = "1.7"
         // Datum des Builds (wird auf der Startseite angezeigt)
         buildConfigField("String", "BUILD_DATE",
             "\"" + LocalDate.now().format(DateTimeFormatter.ofPattern("dd.MM.yyyy")) + "\"")
